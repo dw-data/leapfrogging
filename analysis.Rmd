@@ -1,0 +1,427 @@
+---
+title: "How emerging economies are leapfrogging fossil fuels"
+date: "`r Sys.Date()`"
+output:
+  md_document:
+    variant: gfm
+---
+
+# Introduction
+
+Today, the cheapest way to power a society, is green, clean, renewable electricity. We'll show the "fossil fuel detour" taken by the West, and how some of the poorest countries in the world are building better from the start.  
+
+*In this repository, you will find the methodology, data and code behind the stories that came out of this analysis.*
+
+**Watch the video here:** [Planet A](https://www.dw.com/a-xxx)
+
+**Story by:** [Kira Schacht](https://www.dw.com/en/kira-schacht/person-46893544)
+
+- `analysis.Rmd` is the main file that contains the R code for the analysis
+- `data/...` contains the raw data files used in the analysis
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/Users/SchachtK/Library/CloudStorage/OneDrive-DeutscheWelle/_Projects/2604 leapfrogging/extern') #INSERT YOUR PROJECT DIRECTORY HERE
+
+options(scipen=999)
+
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+needs(jsonlite, tidyverse, readxl, ggbeeswarm,ggtern)
+
+```
+
+
+# Read data
+
+## UN Country metadata
+
+- [UN Country isocodes and continent/regional affiliations](https://unstats.un.org/unsd/methodology/m49/overview/) 
+- [World Bank income groups](https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups  )
+
+```{r}
+meta_region = read.csv("data/meta/UNSD — Methodology.csv", sep = ";") %>% 
+  select(countrycode = ISO.alpha3.Code,
+         country = Country.or.Area,
+         region = Region.Name, subregion = Sub.region.Name,
+         LDC = Least.Developed.Countries..LDC.) %>% 
+  mutate(LDC = (LDC == "x"))
+meta_income = read_xlsx("data/meta/CLASS_2026_07_01.xlsx") %>% 
+  select(countrycode = Code, income = `Income group`)
+
+meta = full_join(meta_region, meta_income, by = "countrycode")
+
+rm(meta_region, meta_income)
+```
+
+## GDP data
+
+[Penn World Table version 11.0](https://www.rug.nl/ggdc/productivity/pwt/?lang=en): Output-side real GDP at chained PPPs (in mil. 2021US$) per capita
+
+
+```{r}
+gdp = read_xlsx('data/pwt110.xlsx', sheet = "Data") %>% 
+  select(countrycode, country, year, rgdpo, pop) %>% 
+  group_by(countrycode) %>%
+  mutate(gdp_pc = rgdpo / pop,
+         g10m = last(pop, order_by = year) >= 10) #countries with at least 1m people in 2023
+#pop in mil
+```
+
+
+## Historical energy data
+
+[Primary, Final and Useful Energy Database (PFUDB)](https://iiasa.ac.at/models-tools-data/pfudb): Final energy consumption by source (TJ/y) and population (1000 persons), for select regions & countries.
+
+```{r}
+l = list.files("data/pfu")
+#merge excel files in this folder
+pfu = map(l, ~ read_xlsx(paste0("data/pfu/", .x), sheet = "data")) %>%
+  list_rbind() %>% 
+  select(-Notes, -Scenario, -Model, -Unit) %>% 
+  filter(!(is.na(Variable))) %>% 
+  pivot_longer("1900.0":"2014.0", names_to = "year", values_to = "value") %>% 
+  mutate(Variable = str_replace_all(Variable, "FEn.Fuel.|Other variables.|.Sector.All Sectors.All Uses", "") %>% 
+           str_replace("All Fuels", "Total"),
+         year = as.integer(year)) %>% 
+  filter(!(Variable %in% c("GDP","Population")))
+rm(l)
+```
+
+
+## IEA Energy Data
+
+- Energy consumption by fuel
+- Electricity generation by fuel
+
+```{r read-data}
+
+#electricity generation data
+d_elec = fromJSON('data/IEA/ElecGenByFuel.json') %>%
+  rename(flow = product, flowLabel = productLabel, product = flow, productLabel = flowLabel)
+
+# Other stats
+d = fromJSON('https://api.iea.org/stats?series=BALANCES') %>% 
+  filter(flow %in% c("TFC","ELECTR","INDPROD","IMPORTS","TES")) %>% #keep only relevant flows
+  full_join(d_elec) %>% #add electricity data
+  mutate(year = as.integer(year),
+         country = ifelse(country == "GUYANA", "GUY", country)) %>% # Fix Guyana country code
+  select(-flowOrder, -seriesLabel) %>%
+  rename(countrycode = country, country = short)# %>% 
+  #filter(flow %in% flows, year < 2024) #2024 no gdp data yet
+rm(d_elec)
+
+
+```
+
+## Merge PFU data with IEA data
+
+Check how similar the two datasets are:
+
+```{r}
+#Compare reported energy consumption totals between IEA and PFU data for select countries
+tmp = pfu %>%
+  filter(Variable == "Total",
+         Region %in% c("United States","China","Germany","India")) %>%
+  rename(country = Region) %>%
+  select(-2) %>% mutate(source = "PFU")
+
+tmp_test = d %>%
+  filter(flow == "TFC", product == "TOTAL",
+         countrycode %in% c("USA","CHN","DEU","IND")) %>% 
+  mutate(country = case_when(countrycode == "USA" ~ "United States",
+                               countrycode == "CHN" ~ "China",
+                               countrycode == "DEU" ~ "Germany",
+                               countrycode == "IND" ~ "India")) %>%
+  select(1,2,4) %>% 
+  mutate(source = "IEA") %>% 
+  bind_rows(tmp)
+rm(tmp)
+
+ggplot(tmp_test,
+       aes(x = year, y = value, 
+           linetype = source, color = country)) +
+  geom_line() +
+  labs(x = "Year", y = "Total final energy consumption (TJ/y)") + theme_minimal()
+#look very similar, nice!
+rm(tmp_test)
+```
+
+
+```{r}
+#make equivalent variables
+pfu_vars = tibble(
+  pfu = pfu$Variable %>% unique %>% sort,
+  productLabel = c("Biofuels and waste",
+                   "Coal and coal products",
+                   "Electricity",
+                   "Solar, wind and other renewables",
+                   "Heat",
+                   "Hydropower",
+                   "Natural gas",
+                   "Nuclear",
+                   "Other",
+                   "Oil and oil products",
+                   "Solar, wind and other renewables",
+                   "Total",
+                   "Solar, wind and other renewables")
+)
+
+
+pfu_merge = pfu %>%
+  #append country information from gdp data (bc country names match better)
+  left_join(gdp %>% group_by(countrycode,country) %>% summarize,
+            by = c("Region" = "country")) %>% 
+  mutate(countrycode = ifelse(is.na(countrycode) & Region == "OECD-90", "OECDTOT", countrycode)) %>%
+  #merge variable names with IEA data
+  left_join(pfu_vars, by = c("Variable" = "pfu")) %>% 
+  select(-Variable) %>% 
+  #group by fuel type so only one entry per
+  #bc solar, wind and other renewables have multiple entries
+  group_by(across(-value)) %>% 
+  summarize(value = sum(value, na.rm=T)) %>%
+  #append missing metadata from IEA dataset
+  left_join(d %>% filter(flow == "TFC") %>% group_by(flow, flowLabel, units, product, productLabel, productOrder) %>% summarize,
+            by = "productLabel") %>% 
+  ungroup %>% select(-Region)
+
+d = bind_rows(d %>% mutate(source = "IEA"),
+              pfu_merge %>% mutate(source = "PFU"))
+
+rm(pfu_merge, pfu_vars)
+```
+
+## Merge energy data with GDP data, add country metadata
+
+```{r}
+d = d %>% select(-country) %>% 
+  left_join(gdp %>% select(-country),
+            by = c("countrycode", "year")) %>% 
+  left_join(meta, by = c("countrycode")) %>% 
+  #use country names from metadata, add taiwan label
+  mutate(country = ifelse(countrycode == "TWN", "Taiwan", country)) %>%
+  relocate(country, .before = year)
+
+```
+
+
+## Assign electricity and energy types to classes
+
+```{r}
+renew = c("ELECTR","GEOTHERM","HYDRO",
+          "ESOLARPV","ETIDE", "EHGEOTHERM", "EHSOLARTH", "EHYDRO","EWIND")
+fossil = c("COAL","MTOTOIL","NATGAS","EHCOAL", "EHNATGAS", "EHOIL","CRNGFEED","TOTPRODS")
+other = c("NUCLEAR","COMRENEW","HEAT","EHNUCLEAR", "EHOTHER","EHWASTE","EHBIOMASS")
+#electr biofuels renewable? 
+
+d_types = d %>% filter(flow %in% c("ELECTR","TFC")) %>%
+  group_by(flow, product, productLabel) %>% 
+  summarize() %>% 
+  mutate(type = case_when(product %in% fossil ~ "fossil",
+                          product %in% renew ~ "renewable",
+                          product %in% other~ "other"))
+
+rm(renew,fossil,other)
+
+d_types %>% group_by(type) %>%
+  summarize(productLabel = paste(productLabel, collapse =", ")) %>% 
+  knitr::kable()
+```
+
+
+# Energy consumption
+
+## How did countries' energy mixes change over time?
+
+Total final consumption (TFC) by source over time
+
+```{r}
+tfc_source = d %>%
+  #filter for TFC, exclude total and sub-categories, use IEA data from 1990
+  filter(flow == "TFC",
+         !(product %in% c("TOTAL", "TOTPRODS","CRNGFEED")),
+         #!is.na(country),
+         #post-1990 data only from IEA
+         !(year >= 1990 & source == "PFU")) %>% 
+  #attach fuel type categories
+  left_join(d_types, by = join_by(flow, product, productLabel)) %>% 
+  group_by(countrycode, year, source) %>%
+  mutate(share = value/sum(value)) %>% 
+  select(1:2,4,share, type, 7:8,10:11,13,16:19)
+
+cols = c("COAL" = "#9e2424", "NATGAS" = "#f7ad6d",
+         "MTOTOIL" = "#eb6565", "ELECTR" = "#50cffa",
+         "COMRENEW" = "#0044b8", "GEOTHERM" = "#0083e4",
+         "HYDRO" = "#05b2fc","NUCLEAR" ="#D8DDE2","HEAT" ="#9099A3")
+```
+
+### Baseline countries: USA, India, China, OECD
+
+Energy consumption shares: Fossil vs biomass vs electricity&renewable
+```{r}
+tfc_plot_baseline = tfc_source %>%
+  filter(countrycode %in% c("USA","CHN","IND","OECDTOT")) %>% 
+  #move biomatter into "other" category
+  mutate(country = ifelse(countrycode == "OECDTOT", "OECD-90", country)) %>%
+  group_by(countrycode, country, year, type) %>%
+  summarise(share = sum(share)) %>% 
+  pivot_wider(names_from = type, values_from = share, values_fill = 0) %>%
+  rename(bio_other = other,
+         electr_renew = renewable)
+
+```
+
+
+```{r}
+ggtern(tfc_plot_baseline,
+       aes(x = electr_renew, y = fossil,z = bio_other,
+           color = country, fill = country)) +
+  geom_path(size = 2) +
+  geom_point(data = tfc_plot_baseline %>%
+               group_by(country) %>% slice_max(year),
+             size = 3, shape = 21, color = "white") +
+  labs(z = "Biofuels\n& others",
+       y = "Fossil fuels",
+       x = "Electricity\n& renewables",
+       title = "Emerging economies are skipping the fossil fuel detour",
+       subtitle = "% of final energy consumption by source") +
+  theme(axis.title=element_text(size=8)) +
+  theme_rotate(degrees = 180)
+
+```
+
+
+```{r}
+tfc_plot_income = tfc_source %>%
+  #remove 3 outliers in low-income countries, limit to years where most countries have data
+  filter(year >= 1990, year <= 2023, !is.na(income),
+         !(countrycode %in% c("PRK","SYR","YEM"))) %>% 
+  group_by(income, year, type) %>%
+  summarise(value = sum(value, na.rm = T)) %>% 
+  group_by(income, year) %>% 
+  mutate(share = value/sum(value, na.rm = T)) %>%
+  select(-value) %>% 
+  pivot_wider(names_from = type, values_from = share, values_fill = 0) %>%
+  rename(bio_other = other,
+         electr_renew = renewable)
+
+```
+
+
+```{r}
+#scatter chart
+ggtern(tfc_plot_income,
+       aes(x = electr_renew, y = fossil, z = bio_other, color = income)) +
+  #add individual baseline countries
+  geom_path(data = tfc_plot_baseline, aes(color = country), alpha = .8) +
+  #lines and points by income group
+  geom_path(size = 1.5) +
+  geom_point(data = tfc_plot_income %>%
+               group_by(income) %>% slice_max(year)) +
+  labs(x = "Electricity\n&renewables",
+       y = "Fossil fuels", y = "Bio\n&other",
+       title = "Emerging economies are skipping the fossil fuel detour",
+       subtitle = "% of final energy consumption by source") +
+  theme(axis.title=element_text(size=8)) +
+  theme_rotate(degrees = 180)
+```
+
+
+# Electricity mix over time
+
+```{r}
+d_elec = d %>%
+  filter(flow == "ELECTR") %>% 
+  group_by(countrycode) %>% 
+  left_join(d_types, by = join_by(flow, product, productLabel)) %>% 
+  group_by(countrycode, year) %>%
+  mutate(share = value/sum(value))
+
+cols = c("EHCOAL" = "#9e2424", "EHNATGAS" = "#f7ad6d", "EHOIL" = "#eb6565",
+         "ESOLARPV" = "#50cffa", "ETIDE" = "#0044b8", "EHGEOTHERM" = "#0083e4",
+         "EHSOLARTH" = "#05b2fc", "EHYDRO" = "#002186","EWIND" = "#081336",
+         "EHNUCLEAR" ="#D8DDE2", "EHOTHER" = "#BFC7CE","EHWASTE" ="#9099A3","EHBIOMASS" = "#6D7780")
+colsLabel = c("Coal" = "#9e2424", "Natural gas" = "#f7ad6d", "Oil" = "#eb6565",
+         "Solar PV" = "#50cffa", "Tide" = "#0044b8", "Geothermal" = "#0083e4",
+         "Solar thermal" = "#05b2fc", "Hydropower" = "#002186","Wind" = "#081336",
+         "Nuclear" ="#D8DDE2", "Other" = "#BFC7CE","Waste" ="#9099A3","Biofuels" = "#6D7780")
+```
+
+
+## Current electricity mix by country
+
+
+```{r}
+elec_shares_current = d_elec %>% ungroup %>% 
+  filter(!(countrycode %in% c("PRK","SYR","YEM")), year < 2024) %>% 
+  group_by(country) %>% 
+  slice_max(year) %>% 
+  group_by(country, income, type) %>% 
+  summarize(share = sum(share)) %>%
+  pivot_wider(names_from = type, values_from = share, values_fill = 0)
+
+elec_shares_current %>%
+  group_by(income) %>%
+  summarize(renewable = median(renewable))
+```
+
+
+## Column chart of current electricity sources:
+
+Income group averages, China, India, Vietnam, US, Global average
+```{r}
+#global average
+d_tmp_global = d_elec %>% ungroup %>% 
+  filter(countrycode == "WORLD") %>%
+  slice_max(year) %>% 
+  mutate(group = "Global average") %>% select(group, productLabel, type, value, share)
+#by income group
+d_tmp_income = d_elec %>%
+  filter(!is.na(income), year < 2024) %>% 
+  group_by(group = income, year, type, productLabel) %>% 
+  summarise(value = sum(value, na.rm = T), .groups = "drop") %>% 
+  slice_max(year) %>% 
+  group_by(group) %>% select(-year) %>% 
+  mutate(share = value/sum(value))
+
+#merge with individual countries
+d_plot = d_elec %>% ungroup %>%
+  filter(countrycode %in% c("USA","CHN","VNM","IND"), year < 2024) %>% 
+  group_by(country) %>% 
+  slice_max(year) %>% 
+  select(group = country, productLabel, type, value, share) %>%
+  bind_rows(d_tmp_global, d_tmp_income) %>% 
+  #group Geothermal,Other sources,Solar thermal,Tide,Waste into other, since their shares are so low
+  mutate(productLabel = ifelse(productLabel %in% c("Geothermal","Other sources","Solar thermal","Tide","Waste"), "Other",productLabel),
+         type = ifelse(productLabel == "Other","other",type)) %>% 
+  group_by(group, type, productLabel) %>%
+  summarize(share = sum(share)) %>% ungroup %>% 
+  #change order of countries for the chart
+  mutate(group = fct_reorder2(group,
+                              .x = share, .y = type,
+                               .fun = function(x, y){-sum(x[y == "renewable"])}))
+
+rm(d_tmp_global, d_tmp_income)
+```
+
+
+```{r}
+ggplot(d_plot,
+       aes(group, share, group = type, fill = productLabel)) +
+  geom_col() +
+  scale_fill_manual(values = colsLabel) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(x = "Year", y = "Share of electricity generation") +
+  guides(fill = guide_legend(position = "top", direction = "horizontal")) +
+  theme_minimal() +
+  theme(axis.text.x=element_text(angle=45, vjust = 1, hjust=1),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())
+
+```
+
+
+
