@@ -8,7 +8,7 @@ the start.
 *In this repository, you will find the methodology, data and code behind
 the stories that came out of this analysis.*
 
-**Watch the video here:** [Planet A](https://www.dw.com/a-xxx)
+**Watch the video here:** [Youtube | DW Planet A |  The unexpected way India is beating the U.S.](https://www.youtube.com/watch?v=qoNr6hjy7aE)
 
 **Story by:** [Kira
 Schacht](https://www.dw.com/en/kira-schacht/person-46893544)
