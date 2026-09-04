@@ -93,3 +93,17 @@ Energy consumption shares: Fossil vs biomass vs electricity&renewable
 Income group averages, China, India, Vietnam, US, Global average
 
 ![](analysis_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+
+# Quality control disclaimer
+
+The code used in this analysis was written by the author. For all of our
+analyses, if any portion of the code is LLM-generated, this is flagged
+in the script.
+
+All code in this project has been reviewed pre-publication by both the
+author as well as a second person to ensure quality.
+
+Should you have any questions or notice errors or inconsistencies,
+please reach out to
+[data-team\@dw.com](mailto:data-team@dw.com){.email}.
+
