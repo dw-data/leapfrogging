@@ -105,5 +105,5 @@ author as well as a second person to ensure quality.
 
 Should you have any questions or notice errors or inconsistencies,
 please reach out to
-[data-team\@dw.com](mailto:data-team@dw.com){.email}.
+[data-team\@dw.com](mailto:data-team@dw.com).
 
