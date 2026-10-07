@@ -8,7 +8,12 @@ the start.
 *In this repository, you will find the methodology, data and code behind
 the stories that came out of this analysis.*
 
-**Watch the video here:** [Youtube | DW Planet A |  The unexpected way India is beating the U.S.](https://www.youtube.com/watch?v=qoNr6hjy7aE)
+**Explainer video:** [Youtube, DW Planet A: The unexpected way India is
+beating the U.S.](https://www.youtube.com/watch?v=qoNr6hjy7aE) \|
+[Instagram,
+dw_environment](https://www.instagram.com/reels/DdWWH3hjF6j/)
+
+**Online article:** [English](https://www.dw.com/a-79474847)
 
 **Story by:** [Kira
 Schacht](https://www.dw.com/en/kira-schacht/person-46893544)
@@ -67,13 +72,30 @@ Check how similar the two datasets are:
 
 Total final consumption (TFC) by source over time
 
-### Baseline countries: USA, India, China, OECD
+Energy consumption shares by source type: Fossil vs biomass vs
+electricity&renewable
 
-Energy consumption shares: Fossil vs biomass vs electricity&renewable
+### US energy consumption by individual source
 
-![](analysis_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+    ## # A tibble: 6 × 7
+    ##    year   COAL   NATGAS  MTOTOIL  OTHER COMRENEW   ELECTR
+    ##   <dbl>  <dbl>    <dbl>    <dbl>  <dbl>    <dbl>    <dbl>
+    ## 1  2019 644740 16025952 31622507 379637  3590849 13787827
+    ## 2  2020 540438 14932423 27963136 378756  3294752 13600044
+    ## 3  2021 567856 15486875 30340529 371993  3484833 13817551
+    ## 4  2022 553349 16148771 31085058 375062  3576353 14422350
+    ## 5  2023 514065 16087157 30851540 382720  4011411 14019321
+    ## 6  2024 474662 16149605 30642358 380813  3769590 14523510
 
-![](analysis_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+### Baseline countries: USA, India, China, Vietnam, OECD
+
+![](analysis_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
+
+### By income groups
+
+![](analysis_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
+
+### For online chart: Baseline countries and combined income groups
 
 # Electricity mix over time
 
@@ -83,16 +105,26 @@ Energy consumption shares: Fossil vs biomass vs electricity&renewable
     ##   income              renewable
     ##   <chr>                   <dbl>
     ## 1 High income             0.298
-    ## 2 Low income              0.496
-    ## 3 Lower middle income     0.394
+    ## 2 Low income              0.468
+    ## 3 Lower middle income     0.372
     ## 4 Upper middle income     0.220
-    ## 5 <NA>                    8.40
+    ## 5 <NA>                    8.36
 
 ## Column chart of current electricity sources:
 
 Income group averages, China, India, Vietnam, US, Global average
 
-![](analysis_files/figure-gfm/unnamed-chunk-16-1.png)<!-- -->
+![](analysis_files/figure-gfm/unnamed-chunk-18-1.png)<!-- -->
+
+## Solar power development in Africa
+
+Source: [Ember yearly electricity
+data](https://ember-energy.org/data/yearly-electricity-data/)
+
+Ember includes more complete electricity data for African countries, and
+includes figures for 2024.
+
+![](analysis_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
 
 # Quality control disclaimer
 
@@ -104,6 +136,4 @@ All code in this project has been reviewed pre-publication by both the
 author as well as a second person to ensure quality.
 
 Should you have any questions or notice errors or inconsistencies,
-please reach out to
-[data-team\@dw.com](mailto:data-team@dw.com).
-
+please reach out to <data-team@dw.com>.

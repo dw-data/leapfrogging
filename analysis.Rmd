@@ -12,7 +12,9 @@ Today, the cheapest way to power a society, is green, clean, renewable electrici
 
 *In this repository, you will find the methodology, data and code behind the stories that came out of this analysis.*
 
-**Watch the video here:** [Youtube | DW Planet A |  The unexpected way India is beating the U.S.](https://www.youtube.com/watch?v=qoNr6hjy7aE)
+**Explainer video:** [Youtube, DW Planet A:  The unexpected way India is beating the U.S.](https://www.youtube.com/watch?v=qoNr6hjy7aE) | [Instagram, dw_environment](https://www.instagram.com/reels/DdWWH3hjF6j/)
+
+**Online article:** [English](https://www.dw.com/a-79474847)
 
 **Story by:** [Kira Schacht](https://www.dw.com/en/kira-schacht/person-46893544)
 
@@ -66,8 +68,7 @@ rm(meta_region, meta_income)
 gdp = read_xlsx('data/pwt110.xlsx', sheet = "Data") %>% 
   select(countrycode, country, year, rgdpo, pop) %>% 
   group_by(countrycode) %>%
-  mutate(gdp_pc = rgdpo / pop,
-         g10m = last(pop, order_by = year) >= 10) #countries with at least 1m people in 2023
+  mutate(gdp_pc = rgdpo / pop)
 #pop in mil
 ```
 
@@ -100,7 +101,7 @@ rm(l)
 ```{r read-data}
 
 #electricity generation data
-d_elec = fromJSON('data/IEA/ElecGenByFuel.json') %>%
+d_elec = fromJSON('https://api.iea.org/stats/indicator/ElecGenByFuel') %>%
   rename(flow = product, flowLabel = productLabel, product = flow, productLabel = flowLabel)
 
 # Other stats
@@ -258,20 +259,35 @@ cols = c("COAL" = "#9e2424", "NATGAS" = "#f7ad6d",
          "HYDRO" = "#05b2fc","NUCLEAR" ="#D8DDE2","HEAT" ="#9099A3")
 ```
 
-### Baseline countries: USA, India, China, OECD
 
-Energy consumption shares: Fossil vs biomass vs electricity&renewable
+Energy consumption shares by source type: Fossil vs biomass vs electricity&renewable
+
+### US energy consumption by individual source
+```{r}
+tfc_source_us = tfc_source %>%
+  filter(countrycode == "USA") %>% 
+  ungroup %>% select(year, product, value) %>%
+  mutate(product = ifelse(product %in% c("HEAT","GEOTHERM"), "OTHER", product)) %>%
+  group_by(product, year) %>%
+  summarise(value = sum(value)) %>%
+  pivot_wider(names_from = product, values_from = value, values_fill = 0) %>% 
+  select(-HYDRO,-NUCLEAR) %>% 
+  select(year, COAL, NATGAS, MTOTOIL, OTHER, COMRENEW, ELECTR)
+
+tail(tfc_source_us)
+```
+
+
+### Baseline countries: USA, India, China, Vietnam, OECD
 ```{r}
 tfc_plot_baseline = tfc_source %>%
-  filter(countrycode %in% c("USA","CHN","IND","OECDTOT")) %>% 
-  #move biomatter into "other" category
+  filter(countrycode %in% c("USA","CHN","IND","VNM","OECDTOT")) %>% 
   mutate(country = ifelse(countrycode == "OECDTOT", "OECD-90", country)) %>%
-  group_by(countrycode, country, year, type) %>%
+  group_by(country, year, type) %>%
   summarise(share = sum(share)) %>% 
   pivot_wider(names_from = type, values_from = share, values_fill = 0) %>%
   rename(bio_other = other,
          electr_renew = renewable)
-
 ```
 
 
@@ -293,6 +309,7 @@ ggtern(tfc_plot_baseline,
 
 ```
 
+### By income groups
 
 ```{r}
 tfc_plot_income = tfc_source %>%
@@ -329,6 +346,52 @@ ggtern(tfc_plot_income,
   theme_rotate(degrees = 180)
 ```
 
+### For online chart: Baseline countries and combined income groups
+
+```{r}
+tfc_plot_combined = tfc_source %>%
+  #remove 3 outliers in low-income countries, limit to years where most countries have data
+  filter(year >= 1990, year <= 2023, !is.na(income),
+         !(countrycode %in% c("PRK","SYR","YEM"))) %>% 
+  #group two middle-income classes
+  mutate(income = ifelse(grepl("middle", income), "Middle income", income)) %>%
+  group_by(income, year, type) %>%
+  summarise(value = sum(value, na.rm = T)) %>% 
+  group_by(income, year) %>% 
+  mutate(share = value/sum(value, na.rm = T)) %>%
+  select(-value) %>% 
+  pivot_wider(names_from = type, values_from = share, values_fill = 0) %>%
+  rename(bio_other = other,
+         electr_renew = renewable,
+         country = income) %>% 
+  bind_rows(tfc_plot_baseline) %>%
+  select(-bio_other) %>% 
+  filter(country != "OECD-90") %>%
+  mutate(country = 
+           case_when(
+                    country == "Viet Nam" ~ "Vietnam",
+                    country == "United States of America" ~ "United States",
+                     .default = country))
+write.csv(tfc_plot_combined, "../results/tfc_plot_combined.csv", row.names = F)
+
+#calculate line coordinates for datawrapper connected scatterplot
+x = tfc_plot_combined %>% 
+  group_by(country) %>% 
+  summarise(x = paste(electr_renew, fossil, sep = ",", collapse = ", ")) %>%
+  mutate(x = paste(0, x, " @stroke:", 
+                   case_when(country == "United States" ~ "#50CFFA",
+                             country == "China" ~ "#EF6C6C",
+                             country == "India" ~ "#FAE000",
+                             country == "Vietnam" ~ "#63DE9D",
+                             country == "Low income" ~ "#3B444D",
+                             country == "Middle income" ~ "#7F8891",
+                             country == "High income" ~ "#BFC7CE"),
+                   " @width:4 @opacity:0.4 @color:transparent"
+                   ))
+
+
+```
+
 
 # Electricity mix over time
 
@@ -352,7 +415,6 @@ colsLabel = c("Coal" = "#9e2424", "Natural gas" = "#f7ad6d", "Oil" = "#eb6565",
 
 
 ## Current electricity mix by country
-
 
 ```{r}
 elec_shares_current = d_elec %>% ungroup %>% 
@@ -404,6 +466,11 @@ d_plot = d_elec %>% ungroup %>%
                               .x = share, .y = type,
                                .fun = function(x, y){-sum(x[y == "renewable"])}))
 
+d_plot %>% select(-type) %>% 
+  mutate(share = share*100) %>% 
+  pivot_wider(names_from = productLabel, values_from = share, values_fill = 0) %>%
+  arrange(group) %>% 
+  write.csv("../results/electricity_generation_current.csv", row.names = F)
 rm(d_tmp_global, d_tmp_income)
 ```
 
@@ -422,6 +489,31 @@ ggplot(d_plot,
         panel.grid.minor.x = element_blank())
 
 ```
+
+## Solar power development in Africa
+
+Source: [Ember yearly electricity data](https://ember-energy.org/data/yearly-electricity-data/)
+
+Ember includes more complete electricity data for African countries, and includes figures for 2024.
+
+```{r}
+ember = read.csv("data/Ember_release_generation_yearly_global.csv") %>% 
+  filter(Electricity.source == "Solar",
+         Continent == "Africa" |
+           ISO.3.code %in% c("USA","CHN") |
+           Area == "Africa") %>% 
+  select(1:4,share = Share.of.generation....,18:21) %>% 
+  group_by(Area) %>% 
+  filter(!(Continent == "Africa" & max(share) < 5))
+
+ggplot(ember, aes(x = Year, y = share)) +
+  geom_line() +
+  labs(x = "Year", y = "Solar share", color = "Country") +
+  facet_wrap(~Area, ncol = 7) +
+  theme_minimal()
+```
+
+
 
 # Quality control disclaimer
 
